@@ -1,15 +1,21 @@
 import os
 import sys
 import glob
+import numpy as np
+import shutil
 import subprocess
 import datetime
+import pdb
 
 from skimage import io
-from scipy.misc import imresize
+# from scipy.misc import imresize
+from skimage.transform import resize as imresize
 
 from multiprocessing import Pool
 from pytube import YouTube
 from time import sleep
+
+# RNG = np.random.default_rng(19) ##################################################################
 
 class Data:
     def __init__(self, url, seqname, list_timestamps):
@@ -79,33 +85,51 @@ class DataDownloader:
         print("[INFO] Loading data list ... ",end='')
         self.dataroot = dataroot
         self.list_seqnames = sorted(glob.glob(dataroot + '/*.txt'))
-        self.output_root = './dataset/' + mode + '/'
+        self.output_root = '/Volumes/LaCie/realestate10k/dataset/' + mode + '/' ##################################################################
         self.mode =  mode
 
         self.isDone = False
         if not os.path.exists(self.output_root):
             os.makedirs(self.output_root)
         else:
-            print("[INFO] The output dir has already existed.")
-            self.isDone = True
+            print("[INFO] The output dir has already existed.")         ##################################################################
+            shutil.rmtree(self.output_root)                             ##################################################################
+            os.makedirs(self.output_root)                               ##################################################################
+        
+        ##################################################################
+        # if mode == "train":
+        #     rn_int = RNG.integers(low=0, high=71556, size=40000)
+        # elif mode == "test":
+        #     rn_int = RNG.integers(low=0, high=7711, size=2000)
+        # else:
+        #     print("Not samplinng...")
+        ##################################################################
 
         self.list_data = []
         if not self.isDone:
-            for txt_file in self.list_seqnames:
+            for seq_num, txt_file in enumerate(self.list_seqnames): ##################################################################
+                # if seq_num not in rn_int:                           ##################################################################
+                    # continue                                        ##################################################################
+
                 dir_name = txt_file.split('/')[-1]
                 seq_name = dir_name.split('.')[0]
-
+                
                 # extract info from txt
                 seq_file = open(txt_file, "r")
                 lines = seq_file.readlines()
                 youtube_url = ""
                 list_timestamps= []
+
+                # total_lines = len(lines)                                        ##################################################################
+                # ri = RNG.integers(low=1, high=total_lines)                      ##################################################################
+                
                 for idx, line in enumerate(lines):
                     if idx == 0:
                         youtube_url = line.strip()
-                    else:
+                    else:                                             ##################################################################
                         timestamp = int(line.split(' ')[0])
                         list_timestamps.append(timestamp)
+                        # break                                                   ##################################################################
                 seq_file.close()
 
                 isRegistered = False
@@ -132,21 +156,28 @@ class DataDownloader:
             try :
                 # sometimes this fails because of known issues of pytube and unknown factors
                 yt = YouTube(data.url)
-                stream = yt.streams.first()
-                stream.download('./','current_'+mode)
-            except :
-                failure_log = open('failed_videos_'+mode+'.txt', 'a')
+                # for stream in yt.streams.filter(progressive=False, file_extension='mp4'):
+                    # print(stream)
+                stream = yt.streams.filter(progressive=False, file_extension='mp4', resolution='480p').first()
+                print(f"chosen stream -> {stream}")
+                stream.download('/Volumes/LaCie/realestate10k/','current_'+self.mode)
+            except:
+                failure_log = open('failed_videos_'+self.mode+'.txt', 'a')
                 for seqname in data.list_seqnames:
                     failure_log.writelines(seqname + '\n')
                 failure_log.close()
+                print("failed")                                                ##################################################################
                 continue
 
             sleep(1)
 
-            videoname_candinate_list = glob.glob('./*')
-            for videoname_candinate in videoname_candinate_list:
-                if videoname_candinate.split('.')[-2] == '/current_'+mode:
-                    videoname = videoname_candinate
+            videoname = ''
+            videoname_candidate_list = glob.glob('/Volumes/LaCie/realestate10k/*')
+            for videoname_candidate in videoname_candidate_list:
+                if videoname_candidate.split('/')[-1] == 'current_'+mode:
+                    videoname = videoname_candidate
+
+            assert videoname != ''
 
             if len(data) == 1: # len(data) is len(data.list_seqnames)
                 process(data, 0, videoname, self.output_root)
@@ -167,15 +198,24 @@ class DataDownloader:
     def Show(self):
         print("########################################")
         global_count = 0
+        num_frames = 0
+        min_frames = 202202002
+        global_url_count = 0
         for data in self.list_data:
             print(" URL : {}".format(data.url))
+            global_url_count += 1
             for idx in range(len(data)):
                 print(" SEQ_{} : {}".format(idx, data.list_seqnames[idx]))
                 print(" LEN_{} : {}".format(idx, len(data.list_list_timestamps[idx])))
+                num_frames += len(data.list_list_timestamps[idx])
+                min_frames = min(min_frames, len(data.list_list_timestamps[idx]))
                 global_count = global_count + 1
             print("----------------------------------------")
 
         print("TOTAL : {} sequnces".format(global_count))
+        print(f"Total urls {global_url_count}")
+        print(f"Total frames : {num_frames}")
+        print(f"min frames among all seq is {min_frames}")
 
 if __name__ == "__main__":
 
@@ -194,7 +234,7 @@ if __name__ == "__main__":
     dataroot = "./RealEstate10K/" + mode
     downloader = DataDownloader(dataroot, mode)
 
-    downloader.Show()
+    # downloader.Show()
     isOK = downloader.Run()
 
     if isOK:
